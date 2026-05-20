@@ -1,0 +1,91 @@
+<div class="weather-card">
+  <h2>Weather App</h2>
+
+  <div class="search-box">
+    <input
+      [(ngModel)]="city"
+      (keyup.enter)="getWeather()"
+      placeholder="City Name..."
+    />
+    <button class="search-btn" (click)="getWeather()" [disabled]="loading">
+      {{ loading ? "..." : "Search" }}
+    </button>
+    <!-- current location -->
+    <button
+      class="current-location-btn"
+      (click)="getCurrentLocation()"
+      title="Use Current Location"
+    >
+      <span class="material-symbols-outlined">my_location</span>
+    </button>
+  </div>
+
+  <div *ngIf="loading">
+    <p>Fetching weather...</p>
+  </div>
+
+  <div *ngIf="weatherData && !loading">
+    <h3>{{ weatherData.city }}, {{ weatherData.country }}</h3>
+
+    <div>
+      <span>Local Time: </span> <b>{{ weatherData.localTime }}</b>
+    </div>
+
+    <div class="temp-container">
+      <img
+        [src]="
+          'https://openweathermap.org/img/wn/' + weatherData.icon + '@4x.png'
+        "
+      />
+      <p class="condition">{{ weatherData.condition | titlecase }}</p>
+      <div class="temp-main">
+        <span class="material-symbols-outlined" style="color: #ffca28"
+          >device_thermostat</span
+        >
+        <span> Temperature: </span>
+        <b>
+          {{ weatherData.temperature?.celsius | number : "1.0-0"
+          }}<span class="unit">°C</span>
+          <span class="separator"> / </span>
+          {{ weatherData.temperature?.fahrenheit | number : "1.0-0"
+          }}<span class="unit">°F</span>
+        </b>
+      </div>
+    </div>
+
+    <div class="details-row">
+      <div class="detail-item">
+        <span class="material-symbols-outlined" style="color: #81d4fa"
+          >humidity_percentage</span
+        >
+        <span> Humidity: </span>
+        <b>{{ weatherData.humidity }}%</b>
+      </div>
+      <div class="detail-item">
+        <span class="material-symbols-outlined" style="color: #a81852"
+          >air</span
+        >
+        <span> Wind: </span>
+        <b>{{ weatherData.wind?.speed }} m/s</b>
+
+        <div style="display: flex; align-items: center; gap: 4px">
+          {{ weatherData.wind?.deg | windDirection }}
+          <span
+            class="material-symbols-outlined"
+            [style.color]="'#a81852'"
+            [style.transform]="
+              'rotate(' + (((weatherData.wind?.deg || 0)+ 180) % 360) + 'deg)'
+            "
+          >
+            north
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div *ngIf="errorMessage" class="error-message">
+    <span class="material-symbols-outlined" style="font-size: 20px">info</span>
+    {{ errorMessage }}
+  </div>
+</div>

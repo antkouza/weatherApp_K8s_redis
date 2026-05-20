@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: weather-backend
+  labels:
+    app: weather-backend
+
+spec:
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: weather-backend
+
+  template:
+    metadata:
+      labels:
+        app: weather-backend
+
+    spec:
+      containers:
+        - name: backend
+          image: weather-backend:v1
+          imagePullPolicy: IfNotPresent
+
+          ports:
+            - containerPort: 8080
+
+          env:
+            - name: WEATHER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: weather-secrets
+                  key: API_KEY
+            - name: REDIS_ADDR
+              value: "redis-service:6379" # <-- This matches the name of Redis service!
+
+---
+apiVersion: v1
+kind: Service
+
+metadata:
+  name: backend-service
+
+spec:
+  type: NodePort
+
+  selector:
+    app: weather-backend
+
+  ports:
+    - protocol: TCP
+      port: 8080 # The port cluster services use to talk to this service
+      targetPort: 8080 # The actual port the Go container listens on
+      nodePort: 30080 # Maps directly to host port 8080 via our kind-config!
