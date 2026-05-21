@@ -1,91 +1,56 @@
-# 🌦️ Weather App (Angular + Go)
+# 🌤️ Weather App (K8s + Redis)
 
-## 📌 Introduction
+A scalable, production-grade full-stack weather application featuring an **Angular** frontend and a stateless **Go** backend.\
+The application fetches real-time meteorological data from the OpenWeather API and utilizes a centralized, distributed **Redis** caching layer to handle rapid repeated requests efficiently.\
+The entire ecosystem is orchestrated natively inside a local **Kubernetes (Kind)** cluster, moving away from simple single-host container runtimes to modern cloud-native standards.
 
-This project is a simple full-stack Weather Application that allows users to search for weather information:
-- City Search: Search for weather data by entering any city name.
-- Location-Based Weather: Fetch real-time weather using the browser's Geolocation API.\
-\
-The frontend is built with **Angular**, providing a user-friendly interface, while the backend is implemented in **Go**, acting as a lightweight API server that fetches real-time weather data from the OpenWeather API.\
-Moreover, the backend uses a simple **in-memory cache** to cache entries to achieve faster responses for repeated requests and reduced external API calls. Entries expire after a few minutes.
-
-Containerized both frontend/backend application; managed via Docker Compose.\
-<img width="362" height="491" alt="image" src="https://github.com/user-attachments/assets/c112243e-188b-4cd4-91fb-a1b6725793f5" />
 <img width="362" height="491" alt="image" src="https://github.com/user-attachments/assets/3c39336d-36f8-46bd-b941-ee5d4dd45284" />
 
+## 🏗️ System Architecture
 
+Unlike traditional monolithic setups, this architecture isolates compute and caching into dedicated, decoupled components:
 
-## 🚀 Key Technologies
+*   **Frontend (Angular + Nginx):** A containerized single-page web interface served via an optimized Nginx web server, exposed to the host machine through a native Kubernetes NodePort Service.
+*   **Backend (Go REST API):** A stateless Go microservice that handles routing, business logic, and third-party API communication. It automatically pulls api_key from Kubernetes Secrets.
+*   **Cache Layer (Redis):** A centralized `redis:7-alpine` database instance. Because the backend instances are fully stateless, multiple replicas can scale horizontally while communicating with this shared cache to eliminate calls to OpenWeather.Redis cache implementation handling automatic TTL (Time-To-Live) expirations.
+*   **Infrastructure (Kind):** A local Kubernetes cluster executing via Docker containers, utilizing internal cluster networking DNS (`redis-service:6379`) for secure intra-component communication.
+*   **Horizontal Scalability Ready:** Fully compatible with Kubernetes replication scaling (`kubectl scale`) without memory or session splitting.
 
-### Frontend
+---
 
-- Angular
-- TypeScript
-- HTML / CSS
-- Angular Forms & HTTP Client
+## 🚀 Getting Started & Local Deployment
 
-### Backend
+To abstract heavy technical configurations away from product documentation, all prerequisites, cluster initialization procedures, container building protocols, and Kubernetes manifest execution steps are detailed in a dedicated setup guide.
 
-- Go (Golang)
-- net/http package
-- REST API integration
+### 📖 [Click to view the step-by-step Local K8s Setup Guide](./SETUP.md)
 
-### External API
+---
 
-- OpenWeatherMap API
+## 🛠️ Tech Stack
 
+*   **Frontend:** Angular 17+, Nginx
+*   **Backend:** Go (Golang) 1.22+, `go-redis/v9`
+*   **Database/Cache:** Redis 7
+*   **Orchestration:** Kubernetes v1.29+, Kind (Kubernetes in Docker), `kubectl`
 
 ## ⚙️ Getting Started
+🐳 with K8S
 
-### Prerequisites
-
-Make sure you have the following installed:
-
-- Node.js (v16+ recommended)
-- Angular CLI
-- Go (v1.18+)
-- OpenWeatherMap API Key
-
-## 🛠️ Installation & Run
-
-1. Clone the repository
-
+start the cluster:
 ```bash
-git clone https://github.com/antkouza/weatherApp_Angular_and_Go.git
-cd weather-app
+docker start weather-cluster-control-plane
+
+kubectl scale deployment weather-backend --replicas=3
+kubectl scale deployment weather-frontend --replicas=1
+kubectl scale deployment weather-redis --replicas=1
 ```
-
-2. Backend Setup (Go)
-```bash
-cd backend
-Create .env file with
-API_KEY=your_openweather_api_key
-```
-
-Run the Go server
-
-```bash
-go build (or go run .)
-.\weatherApp.exe
-```
-
-The backend will start on:
-http://localhost:8080
-You can also test the backend alone from browser e.g. http://localhost:8080/weather/London,uk
-
-3. Frontend Setup (Angular)
-
-```bash
-cd frontend/weather-app
-(npm install if you need to install dependencies)
-ng serve (run app)
-```
-
 The frontend will start on:
 http://localhost:4200.
 
-🐳 Containerization (Docker)
-If you wish to avoid previous installations, then The fastest way to run the entire stack is using Docker Compose. This will automatically build the images and start both the Go backend container and Angular frontend container.
+🐳 Without K8S : Containerization (Docker)
+
+If you prefer NOT installing kubectl or kind, I’ve included an optional `docker-compose.yml` that containerizes the frontend, backend, and Redis.\
+So, you can run the entire stack via Docker Compose. This automatically builds the images and spins up the Go, Angular, and Redis containers.\
 Launch the containers
 ```bash
 docker compose up --build
@@ -94,6 +59,7 @@ To ensure both the containers are running, run:
 ```bash
 docker compose ps
 NAMES STATUS
+go-weather-redis-1                        Up 20 seconds
 go-weather-frontend-1                        Up 20 seconds
 go-weather-backend-1                         Up 21 seconds
 ```
@@ -101,14 +67,14 @@ Once started, access: http://localhost:4200
 
 ## 🔄 How It Works
 Users can retrieve weather data by searching for a specific city or by using the browser's geolocation to fetch data for their current location.\
-Frontend sends a GET request: http://localhost:8080/weather?city=tokyo to backend.
+Frontend sends a GET request: `http://localhost:8080/weather?city=tokyo` to backend.
 
 Go backend:
 - Receives the request from the frontend
-- Checks the **in-memory cache**:
-  - If recent data for the requested city exists → returns cached response
+- Checks the **redis cache**:
+  - If recent data for the requested city exists → returns cached response (redis ttl set to 1 min)
   - If not → proceeds to fetch fresh data
-- Calls the OpenWeather API using the API key from the `.env` file
+- Calls the OpenWeather API using the API key
 - Processes and transforms the response into a simplified JSON format
 - Stores the result in the cache
 - Returns JSON weather data to the frontend
@@ -126,7 +92,7 @@ Backend showcase request with and w/o caching
 Run Angular tests (Karma/Jasmine)
 
 ```bash
-ng test
+frontend\weather-app> ng test
 ```
 
 ## 📁 Structure
@@ -144,5 +110,11 @@ weatherApp_Angular_and_Go (GitHub Repo)
 │ └── package.json
 └── .gitignore
 ├── docker-compose.yml
+├── k8s/
+│ ├── backend.yaml
+│ ├── frontend.yaml
+│ ├── redist.yaml
+│ └── secret.yaml
 └── README.md
+└── SETUP.md
 ```
