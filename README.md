@@ -12,7 +12,8 @@ Unlike traditional monolithic setups, this architecture isolates compute and cac
 
 *   **Frontend (Angular + Nginx):** A containerized single-page web interface served via an optimized Nginx web server, exposed to the host machine through a native Kubernetes NodePort Service.
 *   **Backend (Go REST API):** A stateless Go microservice that handles routing, business logic, and third-party API communication. It automatically pulls api_key from Kubernetes Secrets.
-*   **Cache Layer (Redis):** A centralized `redis:7-alpine` database instance. Because the backend instances are fully stateless, multiple replicas can scale horizontally while communicating with this shared cache to eliminate calls to OpenWeather.Redis cache implementation handling automatic TTL (Time-To-Live) expirations.
+*   **Cache Layer (Redis):** A centralized `redis:7-alpine` database instance. Because the backend instances are fully stateless, multiple replicas can scale horizontally while communicating with this shared cache to eliminate calls to OpenWeather.Redis cache implementation handling automatic TTL (Time-To-Live) expirations.\
+We support a Stale-While-Revalidate (SWR) data pipeline to eliminate duplicate API latency by serving stale data and fetching asynchronously new data (via go routine).
 *   **Infrastructure (Kind):** A local Kubernetes cluster executing via Docker containers, utilizing internal cluster networking DNS (`redis-service:6379`) for secure intra-component communication.
 *   **Horizontal Scalability Ready:** Fully compatible with Kubernetes replication scaling (`kubectl scale`) without memory or session splitting.
 
@@ -69,15 +70,13 @@ Once started, access: http://localhost:4200
 Users can retrieve weather data by searching for a specific city or by using the browser's geolocation to fetch data for their current location.\
 Frontend sends a GET request: `http://localhost:8080/weather?city=tokyo` to backend.
 
-Go backend:
-- Receives the request from the frontend
-- Checks the **redis cache**:
-  - If recent data for the requested city exists → returns cached response (redis ttl set to 1 min)
-  - If not → proceeds to fetch fresh data
-- Calls the OpenWeather API using the API key
-- Processes and transforms the response into a simplified JSON format
-- Stores the result in the cache
-- Returns JSON weather data to the frontend
+Go Backend & Cache Pipeline:
+
+- Receives incoming requests from the frontend 
+- queries the Redis cache layer via a non-blocking Stale-While-Revalidate (SWR) check:
+  - Cache Hit (Fresh): If cached data exists within the 1-minute freshness window, it returns the response immediately (X-Cache: FROM_CACHE).
+  - Cache Hit (Stale): If the data is found but has passed the 1-minute freshness window, the backend instantly serves the stale data to the client (X-Cache: STALE_REVALIDATING) while asynchronously spawning a detached Goroutine to fetch fresh data from the OpenWeather API and update Redis in the background.
+  - Cache Miss: If the data is completely absent from Redis, it performs a synchronous fallback call to the OpenWeather API using the securely injected Kubernetes Secret key, structures the payload into a simplified JSON layout, commits it to Redis with an extended safety TTL(5 min), and returns the response directly to the frontend.
 
 Frontend Rendering: Angular receives the JSON response and renders
   - Temperature (°C / °F)
