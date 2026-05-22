@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -32,4 +33,10 @@ type weatherData struct {
 type WeatherCache struct {
 	client *redis.Client
 	ctx    context.Context
+}
+
+// swrWrapper handles the internal serialization for stale checks
+type swrWrapper struct {
+	Data    map[string]interface{} `json:"data"`
+	StaleAt time.Time              `json:"stale_at"`
 }

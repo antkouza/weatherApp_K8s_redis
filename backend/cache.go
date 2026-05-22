@@ -24,39 +24,54 @@ func NewWeatherCache(redisAddr string) *WeatherCache {
 }
 
 // Get fetches data from Redis and unmarshals the JSON back into a Go map
-func (c *WeatherCache) Get(city string) (map[string]interface{}, bool) {
-	// Query Redis using the city name as the key
+func (c *WeatherCache) Get(city string) (map[string]interface{}, bool, bool) {
 	val, err := c.client.Get(c.ctx, city).Result()
 	if err == redis.Nil {
-		// Key does not exist or has expired natively in Redis
-		return nil, false
+		return nil, false, false
 	} else if err != nil {
 		fmt.Printf("Redis Error reading key %s: %v\n", city, err)
-		return nil, false
+		return nil, false, false
 	}
 
-	// Unmarshal the cached JSON string back into map[string]interface{}
-	var data map[string]interface{}
-	err = json.Unmarshal([]byte(val), &data)
+	// Unmarshal into our new SWR wrapper structure
+	var wrapper swrWrapper
+	err = json.Unmarshal([]byte(val), &wrapper)
 	if err != nil {
 		fmt.Printf("JSON Unmarshal Error for key %s: %v\n", city, err)
-		return nil, false
+		return nil, false, false
 	}
 
-	return data, true
+	// The data is stale if the current clock time has passed our StaleAt marker
+	isStale := time.Now().After(wrapper.StaleAt)
+
+	return wrapper.wrapperDataCheck(), true, isStale
 }
 
-// Set marshals the weather map to JSON and saves it to Redis with an absolute expiration time
-func (c *WeatherCache) Set(city string, value map[string]interface{}, ttl time.Duration) {
-	// Serialize map structure into a JSON string
-	jsonData, err := json.Marshal(value)
+// Helper method to safely return inner data map
+func (w *swrWrapper) wrapperDataCheck() map[string]interface{} {
+	return w.Data
+}
+
+// Set saves the data to Redis, calculating an extended TTL safety window
+func (c *WeatherCache) Set(city string, value map[string]interface{}, freshDuration time.Duration) {
+	now := time.Now()
+
+	wrapper := swrWrapper{
+		Data:    value,
+		StaleAt: now.Add(freshDuration), // e.g., Mark stale after 1 minute
+	}
+
+	jsonData, err := json.Marshal(wrapper)
 	if err != nil {
 		fmt.Printf("JSON Marshal Error for key %s: %v\n", city, err)
 		return
 	}
 
-	// Save to Redis. Redis automatically deletes this entry after the ttl duration
-	err = c.client.Set(c.ctx, city, jsonData, ttl).Err()
+	// CRITICAL: Keep data inside Redis 5x longer than the fresh window.
+	// This ensures stale data is preserved so background routines can read it.
+	redisTTL := freshDuration * 5
+
+	err = c.client.Set(c.ctx, city, jsonData, redisTTL).Err()
 	if err != nil {
 		fmt.Printf("Redis Error saving key %s: %v\n", city, err)
 	}
