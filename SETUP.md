@@ -391,3 +391,120 @@ weather-redis-6cb4b48c94-4hnw4     1/1     Running   4 (24h ago)   2d5h
 ```
 
 Now, open your Windows browser and head to `http://localhost:4200` to interact with your scalable, distributed full-stack application!
+---
+## 📈 Step 5(optional): Implementing Automated Scaling (Horizontal Pod Autoscaler)
+
+While manual scaling (`kubectl scale`) allows us to explicitly manage workloads, a cloud-native production system dynamically provisions infrastructure to absorb traffic spikes. 
+
+We utilize a **Horizontal Pod Autoscaler (HPA)** to automatically scale our `weather-backend` deployment out (up to 5 pods) or down (minimum 1 pod) based on target CPU utilization metrics.
+
+
+### 1. Setting up Cluster Metrics Infrastructure
+
+By default, local developer environments (like Kind) do not capture raw hardware or container engine telemetry. We must explicitly deploy the official **Kubernetes Metrics Server** to establish a telemetry pipeline.
+
+Run the following commands within your Linux/WSL2 context:
+
+```bash
+# Download and install the official stable metrics server manifests
+kubectl apply -f [https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml](https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml)
+
+# Patch the server for local testing: This instructs the metrics server container 
+# to bypass strict TLS/SSL validation protocols (since Kind operates locally without public CA roots)
+kubectl patch deployment metrics-server -n kube-system --type='json' -p='[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--kubelet-insecure-tls"}]'
+```
+Verify that the system architecture components stabilized successfully:
+```bash
+kubectl get deployment metrics-server -n kube-system
+NAME             READY   UP-TO-DATE   AVAILABLE   AGE
+metrics-server   1/1     1            1           22h
+```
+
+### 2. Deploying the Scaling Manifest
+Ensure that your k8s/backend.yaml has resource requirements assigned (e.g., requests.cpu: "100m"), which provides a metric mathematical baseline. 
+```bash
+          resources:
+            requests:
+              cpu: "100m" # 100 millicores (1/10th of a CPU core baseline)
+              memory: "64Mi" # 64 Megabytes baseline
+            limits:
+              cpu: "200m" # Hard ceiling so it never hogs your laptop's CPU
+              memory: "128Mi" # Hard ceiling for safety
+```
+Then, create and apply your k8s/hpa.yaml configuration:
+```bash
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: weather-backend-scaler
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: weather-backend # The exact name of your Go backend deployment
+  minReplicas: 1 # Sit quietly with 1 pod when there is no traffic
+  maxReplicas: 5 # Scale up to a maximum of 5 pods during huge traffic rushes
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 50 # Scale out if average pod CPU utilization crosses 50%
+
+```
+Deploy the autoscaler resource:
+```bash
+kubectl apply -f k8s/hpa.yaml
+```
+To watch the live calculation logic, pull up a dedicated telemetry view:
+```bash
+kubectl get hpa -w
+```
+
+
+### 🧪 Load Testing & Verification Lifecycle
+To simulate a real-world flash traffic spike, install ApacheBench (ab) on your local machine to smash your backend with hundreds of parallel connections at once
+```bash
+# Install ApacheBench utilities via Ubuntu package management
+sudo apt install apache2-utils
+
+# Execute an aggressive benchmark: 10,000 total requests, keeping 100 concurrent threads active
+ab -n 10000 -c 100 "http://localhost:8080/weather?city=london"
+```
+Real-Time HPA Response Telemetry
+While the load engine is running, you can observe the cluster control loop processing metrics and scaling out your worker infrastructure in real-time:
+```bash
+NAME                     REFERENCE                    TARGETS    MINPODS   MAXPODS   REPLICAS   AGE
+weather-backend-scaler   Deployment/weather-backend   1%/50%     1         5         1          49m
+weather-backend-scaler   Deployment/weather-backend   0%/50%     1         5         1          49m
+weather-backend-scaler   Deployment/weather-backend   160%/50%   1         5         1          49m
+weather-backend-scaler   Deployment/weather-backend   160%/50%   1         5         4          49m
+weather-backend-scaler   Deployment/weather-backend   96%/50%    1         5         4          49m
+weather-backend-scaler   Deployment/weather-backend   98%/50%    1         5         4          50m
+weather-backend-scaler   Deployment/weather-backend   81%/50%    1         5         5          50m
+weather-backend-scaler   Deployment/weather-backend   46%/50%    1         5         5          50m
+weather-backend-scaler   Deployment/weather-backend   4%/50%     1         5         5          51m
+weather-backend-scaler   Deployment/weather-backend   0%/50%     1         5         5          51m
+```
+Underlying Pod Infrastructure Events
+Simultaneously tracking kubectl get pods -w logs demonstrates the instantaneous operational provisioning flow as the API platform matches demand
+```bash
+NAME                                READY   STATUS              RESTARTS       AGE
+weather-backend-5d65d669d6-cr42g    1/1     Running             0              41s
+weather-backend-5d65d669d6-kq749    1/1     Running             1 (24m ago)    51m
+weather-backend-5d65d669d6-l66w4    1/1     Running             0              42s
+weather-backend-5d65d669d6-x8rmq    1/1     Running             0              41s
+weather-frontend-9b59849ff-psqqt    1/1     Running             1 (24m ago)    3d
+weather-redis-6cb4b48c94-trmhh      1/1     Running             1 (24m ago)    3d
+
+# ⚡ HPA scales past threshold -> Triggers new replica instantiation 
+weather-backend-5d65d669d6-rk94w    0/1     Pending             0              0s
+weather-backend-5d65d669d6-rk94w    0/1     ContainerCreating   0              1s
+weather-backend-5d65d669d6-rk94w    1/1     Running             0              13s
+```
+- The Spike (160%/50%): Hardware calculation limits instantly breach the 50% resource profile ruleset.
+
+- Elastic Provisioning (REPLICAS: 4 ➡️ 5): The engine spawns 3 supplementary backend pods (cr42g, l66w4, x8rmq) on Wave 1, followed immediately by pod rk94w on Wave 2 to balance execution demands.
+
+- Self-Healing Cooldown (0%/50%): Once traffic completely ceases, metrics drop back down to safe baseline targets. Kubernetes keeps the extra worker pods alive for a 5-minute stabilization protection window before gracefully destroying them to free system memory.
