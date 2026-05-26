@@ -34,7 +34,13 @@ spec:
                   key: API_KEY
             - name: REDIS_ADDR
               value: "redis-service:6379" # <-- This matches the name of Redis service!
-
+          resources:
+            requests:
+              cpu: "100m" # 100 millicores (1/10th of a CPU core baseline)
+              memory: "64Mi" # 64 Megabytes baseline
+            limits:
+              cpu: "200m"
+              memory: "128Mi"
 ---
 apiVersion: v1
 kind: Service

@@ -1,0 +1,18 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: weather-backend-scaler
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: weather-backend # Go backend deployment
+  minReplicas: 1 # Sit quietly with 1 pod when there is no traffic
+  maxReplicas: 5 # Scale up to a maximum of 5 pods during huge traffic rushes
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 50 # Scale out if average pod CPU utilization crosses 50%
