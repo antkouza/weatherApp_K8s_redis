@@ -15,13 +15,14 @@ Unlike traditional monolithic setups, this architecture isolates compute and cac
 *   **Cache Layer (Redis):** A centralized `redis:7-alpine` database instance. Because the backend instances are fully stateless, multiple replicas can scale horizontally while communicating with this shared cache to eliminate calls to OpenWeather.Redis cache implementation handling automatic TTL (Time-To-Live) expirations.\
 We support a Stale-While-Revalidate (SWR) data pipeline to eliminate duplicate API latency by serving stale data and fetching asynchronously new data (via go routine).
 *   **Infrastructure (Kind):** A local Kubernetes cluster executing via Docker containers, utilizing internal cluster networking DNS (`redis-service:6379`) for secure intra-component communication.
-*   **Horizontal Scalability Ready:** Fully compatible with Kubernetes replication scaling (`kubectl scale`) without memory or session splitting.
+*   **Horizontal Pod Scalability:** Besides manual Kubernetes replication scaling (`kubectl scale`), we have a **Horizontal Pod Autoscaler (HPA)**  that monitors CPU utilization. Because the Go backend is stateless and speaks to a shared Redis layer, Kubernetes can dynamically scale backend instances from **1 to 5 replicas** on the fly to absorb heavy traffic bursts.
+*   **Kubernetes Metrics Server** A local monitoring tool that measures the real-time CPU and memory load of our pods, allowing the cluster to make automated scaling decisions.
 
 ---
 
 ## 🚀 Getting Started & Local Deployment
 
-To abstract heavy technical configurations away from product documentation, all prerequisites, cluster initialization procedures, container building protocols, and Kubernetes manifest execution steps are detailed in a dedicated setup guide.
+To abstract heavy technical configurations away from product documentation, all prerequisites, cluster initialization procedures, container building protocols, metric server setup/load testing and Kubernetes manifest execution steps are detailed in a dedicated setup guide.
 
 ### 📖 [Click to view the step-by-step Local K8s Setup Guide](./SETUP.md)
 
