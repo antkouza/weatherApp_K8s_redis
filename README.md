@@ -17,12 +17,12 @@ We support a Stale-While-Revalidate (SWR) data pipeline to eliminate duplicate A
 *   **Infrastructure (Kind):** A local Kubernetes cluster executing via Docker containers, utilizing internal cluster networking DNS (`redis-service:6379`) for secure intra-component communication.
 *   **Horizontal Pod Scalability:** Besides manual Kubernetes replication scaling (`kubectl scale`), we have a **Horizontal Pod Autoscaler (HPA)**  that monitors CPU utilization. Because the Go backend is stateless and speaks to a shared Redis layer, Kubernetes can dynamically scale backend instances from **1 to 5 replicas** on the fly to absorb heavy traffic bursts.
 *   **Kubernetes Metrics Server** A local monitoring tool that measures the real-time CPU and memory load of our pods, allowing the cluster to make automated scaling decisions.
-
+*   **Prometheus & Grafana Monitoring** A telemetry pipeline where Prometheus automatically scrapes system metrics from the Go backend (every 5 seconds), and Grafana attaches to this data to provide dashboards tracking traffic spikes and cache hit/miss ratios.
 ---
 
 ## 🚀 Getting Started & Local Deployment
 
-To abstract heavy technical configurations away from product documentation, all prerequisites, cluster initialization procedures, container building protocols, metric server setup/load testing and Kubernetes manifest execution steps are detailed in a dedicated setup guide.
+To abstract heavy technical configurations away from product documentation, all prerequisites, cluster initialization, container building, metric server setup, prometheus/grafana setup, load testing and Kubernetes manifest steps are detailed in a dedicated setup guide.
 
 ### 📖 [Click to view the step-by-step Local K8s Setup Guide](./SETUP.md)
 
@@ -34,6 +34,9 @@ To abstract heavy technical configurations away from product documentation, all 
 *   **Backend:** Go (Golang) 1.22+, `go-redis/v9`
 *   **Database/Cache:** Redis 7
 *   **Orchestration:** Kubernetes v1.29+, Kind (Kubernetes in Docker), `kubectl`
+*   **Metrics Instrumentation:** Official Prometheus Go Client Library (`client_golang`)
+*   **Data Visualization:** Grafana v10.0+
+*   **Traffic Simulation:** ApacheBench (`ab`) for load-testing
 
 ## ⚙️ Getting Started
 🐳 with K8S
@@ -61,9 +64,11 @@ To ensure both the containers are running, run:
 ```bash
 docker compose ps
 NAMES STATUS
+go-weather-grafana-1                      Up 20 seconds
+go-weather-prometheus                     Up 20 seconds
 go-weather-redis-1                        Up 20 seconds
-go-weather-frontend-1                        Up 20 seconds
-go-weather-backend-1                         Up 21 seconds
+go-weather-frontend-1                     Up 20 seconds
+go-weather-backend-1                      Up 21 seconds
 ```
 Once started, access: http://localhost:4200
 
@@ -78,6 +83,7 @@ Go Backend & Cache Pipeline:
   - Cache Hit (Fresh): If cached data exists within the 1-minute freshness window, it returns the response immediately (X-Cache: FROM_CACHE).
   - Cache Hit (Stale): If the data is found but has passed the 1-minute freshness window, the backend instantly serves the stale data to the client (X-Cache: STALE_REVALIDATING) while asynchronously spawning a detached Goroutine to fetch fresh data from the OpenWeather API and update Redis in the background.
   - Cache Miss: If the data is completely absent from Redis, it performs a synchronous fallback call to the OpenWeather API using the securely injected Kubernetes Secret key, structures the payload into a simplified JSON layout, commits it to Redis with an extended safety TTL(5 min), and returns the response directly to the frontend.
+- Telemetry: During every cache lookup, the backend uses the official Go Prometheus client to increment counters (weather_cache_hits_total or weather_cache_misses_total), keeping track of application performance for real-time scraping.
 
 Frontend Rendering: Angular receives the JSON response and renders
   - Temperature (°C / °F)
@@ -110,7 +116,11 @@ weatherApp_Angular_and_Go (GitHub Repo)
 │ └── package.json
 └── .gitignore
 ├── docker-compose.yml
+├── prometheus.yml
+├── kind-config.yaml
 ├── k8s/
+│ ├── hpa.yaml
+│ ├── monitoring.yaml
 │ ├── backend.yaml
 │ ├── frontend.yaml
 │ ├── redist.yaml
