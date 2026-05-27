@@ -3,9 +3,22 @@ apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
   - role: control-plane
     extraPortMappings:
+      # 1. Angular Frontend
       - containerPort: 30000
         hostPort: 4200
         listenAddress: "0.0.0.0"
+
+      # 2. Go Backend
       - containerPort: 30080
         hostPort: 8080
+        listenAddress: "0.0.0.0"
+
+      # 3. Grafana Dashboard
+      - containerPort: 30030
+        hostPort: 30030
+        listenAddress: "0.0.0.0"
+
+      # 4. Prometheus Engine
+      - containerPort: 30090
+        hostPort: 30090
         listenAddress: "0.0.0.0"

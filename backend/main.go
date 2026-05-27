@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // const allowedOrigin = "http://localhost:4200" // allow frontend requests
@@ -34,6 +35,9 @@ func main() {
 
 	http.HandleFunc("/weather", weatherHandler)
 	http.HandleFunc("/weather/", weatherHandler)
+
+	// Expose standard telemetry endpoint
+	http.Handle("/metrics", promhttp.Handler())
 
 	http.ListenAndServe(port, nil)
 }
@@ -62,6 +66,7 @@ func weatherHandler(w http.ResponseWriter, r *http.Request) {
 
 	// 1. Query cache. Returns data, foundInRedis, isStale
 	if data, found, isStale := cache.Get(cacheKey); found {
+		cacheHits.Inc()
 		if isStale {
 			fmt.Printf("SWR HIT: Serving stale data for '%s' instantly. Dispatching background refresh.\n", cacheKey)
 			w.Header().Set("X-Cache", "STALE_REVALIDATING")
@@ -79,6 +84,7 @@ func weatherHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 2. ABSOLUTE CACHE MISS: Complete fallback if data is missing entirely from Redis
+	cacheMisses.Inc()
 	fmt.Printf("❄️ CACHE MISS: Complete fallback sync fetch for '%s'.\n", cacheKey)
 	response, err := fetchAndSaveToCache(cacheKey, cityName, lat, lon)
 	if err != nil {
