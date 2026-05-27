@@ -507,4 +507,155 @@ weather-backend-5d65d669d6-rk94w    1/1     Running             0              1
 
 - Elastic Provisioning (REPLICAS: 4 ➡️ 5): The engine spawns 3 supplementary backend pods (cr42g, l66w4, x8rmq) on Wave 1, followed immediately by pod rk94w on Wave 2 to balance execution demands.
 
-- Self-Healing Cooldown (0%/50%): Once traffic completely ceases, metrics drop back down to safe baseline targets. Kubernetes keeps the extra worker pods alive for a 5-minute stabilization protection window before gracefully destroying them to free system memory.
+
+Here is your complete, clean, and professional `helpme.md` file formatted perfectly for GitHub. It includes both the external standard Windows access instructions and the internal cloud-native Kubernetes CLI validation strategies for all users.
+
+---
+
+## 📊 Step 6(optional): Telemetry & Performance Monitoring (Prometheus & Grafana)
+
+To validate the efficiency of the Stale-While-Revalidate (SWR) caching mechanism under heavy concurrency, we use the Prometheus Go Client (`client_golang`).
+
+At WSL terminal, navigate to your Go backend directory, and download the official Prometheus packages:
+```bash
+go get github.com/prometheus/client_golang/prometheus
+go get github.com/prometheus/client_golang/prometheus/promhttp
+```
+i updated main.go to initialize, register, and expose the metrics pipeline. Then i rebuild:
+```bash
+docker build -t weather-backend:v1 .
+kind load docker-image weather-backend:v1 --name weather-cluster
+kubectl rollout restart deployment weather-backend
+```
+and finally I deployed Prometheus & Grafana to Kubernetes (monitoring.yaml and kind-config.yaml)
+
+### Exposed Custom Metrics
+
+* `weather_cache_hits_total`: Counter tracking successful data pulls from the Redis layer.
+* `weather_cache_misses_total`: Counter tracking cache misses that force synchronous external API network calls.
+
+
+### 🧪 Local Load Testing & Validation
+
+The telemetry setup was validated by simulating high traffic using ApacheBench (`ab`) and querying the endpoint.
+
+#### 1. Simulating Traffic Load
+
+A burst of 400 concurrent requests was dispatched:
+
+```bash
+ab -n 400 -c 100 "http://localhost:8080/weather?city=london"
+```
+
+#### 2. Querying the Live Prometheus Endpoint
+
+We verified the internal metrics registry state by filtering the active telemetry stream:
+```bash
+curl http://localhost:8080/metrics | grep weather
+# HELP weather_cache_hits_total Total number of successful Redis cache reads.
+# TYPE weather_cache_hits_total counter
+weather_cache_hits_total 400
+
+# HELP weather_cache_misses_total Total number of cache misses requiring an external API call.
+# TYPE weather_cache_misses_total counter
+weather_cache_misses_total 1
+```
+
+#### 📈 Analysis & Insights
+
+The test results conclusively prove the performance optimization of our microservice architecture:
+
+1. Out of **400 incoming concurrent requests**, the underlying Redis caching layer instantly absorbed **400 cache hits**.
+2. Only **1 total cache miss** occurred (representing the initial lookup), ensuring minimal latency for the vast majority of requests.
+3. The custom metrics pipeline is fully operational and structured correctly for scraping by a cluster-wide Prometheus instance.
+
+### 🔍 Method 1: Accessing Dashboards and Metrics from Windows Browser
+
+you can hit the exposed entry-points directly from your Windows web browser using the following target endpoints:
+
+* **Go Application Live Metrics Stream:** `http://localhost:8080/metrics`
+* **Prometheus Dashboard UI:** `http://localhost:30090`
+* **Grafana Dashboard UI:** `http://localhost:30030` *(Default Login: `admin` / `admin`)*
+
+### 🚀 Method 2: Accessing and Validating Metrics via Kubernetes Shell (In-Cluster CLI)
+
+If you need to run automated testing directly inside the cluster, use the following validation commands using the container shell.
+
+#### 1. Verifying Prometheus Target Scrape Status
+
+Verify that the Prometheus server has successfully discovered and connected to your backend container instance:
+
+```bash
+kubectl run test-curl --rm -it --image=curlimages/curl -- sh
+```
+
+Inside the container terminal, query the endpoints API:
+
+```bash
+curl http://prometheus-service:9090/api/v1/targets
+{
+  "status": "success",
+  "data": {
+    "activeTargets": [
+      {
+        "labels": { "instance": "backend-service:8080", "job": "weather-app" },
+        "scrapeUrl": "http://backend-service:8080/metrics",
+        "health": "up"  <--- ✅ SUCCESS: Scrape pipeline fully active!
+      }
+    ]
+  }
+}
+
+```
+
+#### 2. Querying Live Time-Series Cache Data
+
+You can directly check the metrics values inside the Prometheus Time-Series Database (TSDB) engine via its REST API:
+
+```bash
+kubectl run prometheus-shell --rm -it --image=curlimages/curl -- sh
+```
+
+* **Query Total Cache Hits:**
+```bash
+curl -s "http://prometheus-service:9090/api/v1/query?query=weather_cache_hits_total"
+{
+  "status": "success",
+  "data": {
+    "resultType": "vector",
+    "result": [
+      {
+        "metric": { "__name__": "weather_cache_hits_total", "instance": "backend-service:8080", "job": "weather-app" },
+        "value": [ 1779870290.695, "400" ]  <--- ✅ 400 Cache Hits successfully registered in TSDB
+      }
+    ]
+  }
+}
+```
+
+* **Query Total Cache Misses:**
+```bash
+curl -s "http://prometheus-service:9090/api/v1/query?query=weather_cache_misses_total"
+{
+  "status": "success",
+  "data": {
+    "resultType": "vector",
+    "result": [
+      {
+        "metric": { "__name__": "weather_cache_misses_total", "instance": "backend-service:8080", "job": "weather-app" },
+        "value": [ 1779875013.044, "1" ]  <--- ✅ 1 Cache Miss successfully registered in TSDB
+      }
+    ]
+  }
+}
+```
+---
+
+### 📊 Grafana Dashboard Setup
+connect to Grafana via (`http://localhost:30030`) configure:
+
+1. Navigate to **Connections -> Data Sources -> Add data source**.
+2. Select **Prometheus**.
+3. Set the Connection URL to the internal Kubernetes DNS identifier: **`http://prometheus-service:9090`**
+4. Click **Save & Test** (Confirm with the green active notification).
+5. Create a new panel using PromQL expressions like `weather_cache_hits_total` or `weather_cache_misses_total` to map real-time request distributions.
