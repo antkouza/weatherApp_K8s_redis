@@ -4,7 +4,11 @@ A scalable, production-grade full-stack weather application featuring an **Angul
 The application fetches real-time meteorological data from the OpenWeather API and utilizes a centralized, distributed **Redis** caching layer to handle rapid repeated requests efficiently.\
 The entire ecosystem is orchestrated natively inside a local **Kubernetes (Kind)** cluster, moving away from simple single-host container runtimes to modern cloud-native standards.
 
-<img width="362" height="491" alt="image" src="https://github.com/user-attachments/assets/3c39336d-36f8-46bd-b941-ee5d4dd45284" />
+<img width="362" height="491" alt="image" src="https://github.com/user-attachments/assets/3c39336d-36f8-46bd-b941-ee5d4dd45284" />\
+Prometheus and Grafana monitoring:\
+<img width="444" height="562" alt="image" src="https://github.com/user-attachments/assets/ad4038f3-7e89-45ab-b588-21270d7da9a5" />
+<img width="444" height="562" alt="image" src="https://github.com/user-attachments/assets/64775941-273d-4dcd-b56b-9aa2f22b1858" />
+
 
 ## 🏗️ System Architecture
 
